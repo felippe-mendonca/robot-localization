@@ -1,24 +1,23 @@
 import argparse
 import time
-import ispy
-from ismsgs.robot_pb2 import RobotControllerProgress
+from is_wire.core import Channel, Subscription, Message, Logger
+from is_msgs.robot_pb2 import RobotControllerProgress
 
-def now():
-    n = time.time()
-    mlsec = repr(n).split('.')[1][:3]
-    return time.strftime("%Y-%m-%d %H:%M:%S.{}".format(mlsec), time.localtime(n))
+log = Logger(name='Producer')
 
 parser = argparse.ArgumentParser(description='Consumes RobotControllerProgress messages.')
-parser.add_argument('-b', type=str, default='localhost:5672', help='AMQP Broker hostname.')
+parser.add_argument('-b', type=str, default='amqp://localhost:5672', help='AMQP Broker hostname.')
 options = parser.parse_args()
 
-broker_hostname = options.b.split(':')
-ip, port = broker_hostname[0], int(broker_hostname[1])
-c = ispy.Connection(ip, port)
+broker_hostname = options.b
+channel = Channel(broker_hostname)
+subscription = Subscription(channel)
+subscription.subscribe('RobotController.{robot_id}.Status'.format(robot_id=0))
 
-def on_status(c, context, message):
-    x, y = message.current_pose.position.x, message.current_pose.position.y
-    print '[{}] RobotControllerProgress received | (x,y) = ({:.2f},{:.2f})'.format(now(), x, y)
-
-c.subscribe('RobotController.{robot_id}.Status'.format(robot_id=0), RobotControllerProgress, on_status)
-c.listen()
+while True:
+    msg = channel.consume()
+    progress = msg.unpack(RobotControllerProgress)
+    x, y = progress.current_pose.position.x, progress.current_pose.position.y
+    log.info('RobotControllerProgress received | (x,y) = ({:.2f},{:.2f})', x, y)
+    if progress.done:
+        break

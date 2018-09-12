@@ -2,11 +2,12 @@ from sympy import *
 import numpy as np
 import json, sys, os, time
 
-from ismsgs.robot_pb2 import RobotTask, FinalPoseTask, TrajectoryTask, RobotControllerProgress
-from ismsgs.common_pb2 import SamplingSettings, Pose, Position, Speed
-from ismsgs.robot_parameters_pb2 import Parameters
+from is_msgs.robot_pb2 import RobotTask, FinalPoseTask, TrajectoryTask, RobotControllerProgress
+from is_msgs.common_pb2 import SamplingSettings, Pose, Position, Speed
+from robot_parameters_pb2 import Parameters
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToJson
+from google.protobuf.wrappers_pb2 import FloatValue
 
 def pb_positions(X, Y):
     positions = np.transpose(np.concatenate(
@@ -57,8 +58,10 @@ def eight_trajectory(Ax, Ay, X0, Y0, tf, rate, stop_distance, n=1):
     X, Y = _X(w, t, phi, X0), _Y(w, t, phi, Y0)
     dX, dY = _dX(w, t, phi, X0), _dY(w, t, phi, Y0)
     X, Y, dX, dY = repeat_n(n, X, Y, dX, dY)
-
-    return make_trajectory(pb_positions(X, Y), pb_speeds(dX, dY), stop_distance, SamplingSettings(frequency=rate))
+    positions = pb_positions(X, Y)
+    speeds = pb_speeds(dX, dY)
+    sampling_set = SamplingSettings(frequency=FloatValue(value=rate))
+    return make_trajectory(positions, speeds, stop_distance, sampling_set)
 
 
 def circle_trajectory(X0, Y0, R, tf, rate, stop_distance, n=1):

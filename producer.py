@@ -1,20 +1,17 @@
 import argparse
 import json
 import time
-import ispy
+from is_wire.core import Channel, Message, Logger
+from is_msgs.robot_pb2 import RobotControllerProgress
+from is_msgs.common_pb2 import Pose
 import tasks
-from ismsgs.robot_pb2 import RobotControllerProgress
-from ismsgs.common_pb2 import Pose
 
-def now():
-    n = time.time()
-    mlsec = repr(n).split('.')[1][:3]
-    return time.strftime("%Y-%m-%d %H:%M:%S.{}".format(mlsec), time.localtime(n)) 
+log = Logger(name='Producer')
 
 parser = argparse.ArgumentParser(description='Produces RobotControllerProgress messages.')
 parser.add_argument('-f', type=str, default='eight_trajectory.json',
                     help='JSON file with trajectory parameters and optional robot parameters.')
-parser.add_argument('-b', type=str, default='localhost:5672', help='AMQP Broker hostname.')
+parser.add_argument('-b', type=str, default='amqp://localhost:5672', help='AMQP Broker hostname.')
 options = parser.parse_args()
 
 # read parameters files
@@ -40,16 +37,18 @@ elif task_parameters['type'] == 'final_position':
     X, Y = task_parameters['goal']['x'], task_parameters['goal']['y']
     task = tasks.final_position(X, Y, allowed_error, rate)
 else:
-    print 'Invalid task type on file {}. Exiting.'.format(options.f)
+    log.info('Invalid task type on file {}. Exiting.', options.f)
 
-broker_hostname = options.b.split(':')
-ip, port = broker_hostname[0], int(broker_hostname[1])
-c = ispy.Connection(ip, port)
+broker_hostname = options.b
+channel = Channel(broker_hostname)
+topic = 'RobotController.{robot_id}.Status'.format(robot_id=0)
 
-while True: 
-    for position in task.trajectory.positions:
-        t0 = time.time()
-        rc_status = RobotControllerProgress(current_pose = Pose(position=position))
-        c.publish('RobotController.{robot_id}.Status'.format(robot_id=0), rc_status)
-        print '[{}] RobotControllerProgress published'.format(now())
-        time.sleep((1.0 / rate) - (time.time() - t0))
+dones = [False]*len(task.trajectory.positions)
+dones[-1] = True
+for position, done in zip(task.trajectory.positions, dones):
+    t0 = time.time()
+    rc_status = RobotControllerProgress(current_pose = Pose(position=position), done=done)
+    msg = Message(content=rc_status)
+    channel.publish(msg, topic)
+    log.info('RobotControllerProgress published')
+    time.sleep((1.0 / rate) - (time.time() - t0))
